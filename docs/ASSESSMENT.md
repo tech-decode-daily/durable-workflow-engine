@@ -1,0 +1,9 @@
+# Initial repository assessment
+
+The supplied checkout had an unborn Git branch and no files, commits or remote. After Docker Desktop started, the old Compose containers identified the neighboring Durable Workflow Engine source directory. Its backend, React entry point, Compose configuration, migration, worker and tests were inspected before integrating the prototype.
+
+- **Existing capabilities.** The prototype contains JWT registration/login, tenant-scoped submissions and reads, ordered steps, stable provider keys, an outbox, Redis dispatch, claim fencing and exponential retry delays. Its backend image includes Alembic and the initial migration.
+- **Partial implementations.** The old model combines definitions and executions. It increments an attempt counter, stores the latest output, and uses a task timeout as a lease. Recovery re-enqueues database work through Redis. Its React console can submit a predefined example.
+- **Gaps.** Published versions, per-attempt history, worker registration and lease renewal, pause/resume/cancel, PostgreSQL-only pickup during a Redis outage, versioned monitoring APIs and the visual editor were missing.
+- **Repairs.** The prototype console used port 8000 and submitted an unregistered finalize action. Its workflow submission could flush its audit row before the parent workflow. The PostgreSQL regression test reproduced the resulting foreign-key conflict. The new checkout fixes the API routing, example and insert ordering.
+- **Preservation.** The original migration is retained byte for byte. The prior tenant API and worker continue using the original public tables and queue. The versioned engine uses its own PostgreSQL schema and queue. The default Compose project has a distinct name and data volume. The original source directory and its historical Docker volume were left in place.

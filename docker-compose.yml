@@ -1,0 +1,79 @@
+name: durable-local
+
+x-runtime: &runtime
+  DATABASE_URL: postgresql+asyncpg://workflow:${POSTGRES_PASSWORD:-workflow}@postgres:5432/workflow
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me}
+  ENVIRONMENT: development
+  APP_ENV: ${APP_ENV:-local}
+  HEARTBEAT_SECONDS: ${HEARTBEAT_SECONDS:-2}
+  LEASE_SECONDS: ${LEASE_SECONDS:-12}
+  POLL_SECONDS: ${POLL_SECONDS:-1}
+  MAX_RETRY_DELAY_SECONDS: ${MAX_RETRY_DELAY_SECONDS:-300}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workflow}
+      POSTGRES_DB: workflow
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD, pg_isready, -U, workflow, -d, workflow]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --save, "", --appendonly, "no"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    build: ./backend
+    restart: unless-stopped
+    command: sh -c "alembic upgrade head && python -m app.demo && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment: *runtime
+    ports: ["127.0.0.1:${API_PORT:-8001}:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    init: true
+    command: python -m app.worker
+    environment: *runtime
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -m, app.worker, --health]
+      interval: 8s
+      timeout: 5s
+      retries: 3
+    stop_grace_period: 20s
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_PROXY: http://api:8000
+    ports: ["127.0.0.1:${FRONTEND_PORT:-5173}:5173"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5173').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+volumes:
+  pgdata: {}
