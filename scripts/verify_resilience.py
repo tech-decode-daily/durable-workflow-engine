@@ -49,10 +49,12 @@ def main():
         )
         return result.stdout.strip() if capture else None
 
+    def endpoint():
+        return "http://" + compose("port", "api", "8000", capture=True) + "/api/v1"
+
     try:
         compose("up", "--build", "-d", "--wait", "api", "worker", "redis")
-        addr = compose("port", "api", "8000", capture=True)
-        base = "http://" + addr + "/api/v1"
+        base = endpoint()
 
         def call(path, body=None, method=None):
             req = urllib.request.Request(
@@ -88,6 +90,7 @@ def main():
         rid = run["id"]
         rpath = "/runs/" + rid
         compose("restart", "api")
+        base = endpoint()
         until(lambda: call(rpath)["status"] == "PENDING")
         assert call(path + "/runs", payload)["id"] == rid
         print(
@@ -149,10 +152,25 @@ def main():
             flush=True,
         )
         compose("restart", "api")
+        base = endpoint()
         until(lambda: call(rpath)["output_data"] == payload["input_data"])
         assert call(rpath + "/attempts")["total"] == 2
         print(
             "PASS Final output and attempt history survived a second API restart",
+            flush=True,
+        )
+        compose("up", "-d", "--wait", "--scale", "worker=2", "worker")
+        pair = [
+            "/runs/" + call(path + "/runs", {"input_data": {"index": i}})["id"]
+            for i in range(2)
+        ]
+        until(lambda: all(call(p)["status"] == "RUNNING" for p in pair))
+        owners = {call(p + "/attempts")["items"][0]["worker_id"] for p in pair}
+        assert len(owners) == 2
+        until(lambda: all(call(p)["status"] == "COMPLETED" for p in pair))
+        assert all(call(p + "/attempts")["total"] == 1 for p in pair)
+        print(
+            "PASS Two worker containers held distinct live leases and completed both runs",
             flush=True,
         )
     finally:

@@ -288,10 +288,13 @@ export function RunDetails() {
       !q.state.data || live(q.state.data.run.status) ? 2000 : false,
   });
   const [attemptOffset, setAttemptOffset] = useState(0);
-  const history = useApi<Page<Attempt>>(
-    path + "/attempts?limit=40&offset=" + attemptOffset,
-    timeline.data && live(timeline.data.run.status) ? 2000 : false,
-  );
+  const runState = timeline.data?.run.status;
+  const history = useQuery({
+    queryKey: [path + "/attempts", attemptOffset, runState],
+    queryFn: () => request<Page<Attempt>>(path + "/attempts?limit=40&offset=" + attemptOffset),
+    enabled: Boolean(runState),
+    refetchInterval: runState && live(runState) ? 2000 : false,
+  });
   function change(action: string) {
     act.mutate(async () => {
       await request(path + "/" + action, "POST");
